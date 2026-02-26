@@ -1,11 +1,12 @@
-# Plateforme de location immobilière
+#  Real Estate Rental Platform 
 
-bien_immobillier-Flask-Oracle est une application web de location immobilière développée avec Flask et Oracle PL/SQL.
+bien_immobilier-flask-oracle is a real estate rental web application developed using **Flask** and **Oracle PL/SQL**.
 
-Le projet permet aux locataires de rechercher et réserver des logements et aux propriétaires de gérer leurs annonces et réservations.
+The platform allows tenants to search and reserve properties and allows owners to manage their properties and reservations.
 
+This project demonstrates the integration of a web application with an Oracle relational database using SQL and PL/SQL.
 
-## Technologies utilisées
+## Technologies
 
 - Python
 - Flask
@@ -15,54 +16,46 @@ Le projet permet aux locataires de rechercher et réserver des logements et aux 
 - CSS
 - Tailwind
 
+## Features
 
+### Tenant Features
 
-## Fonctionnalités principales
+- Browse available properties
+- Search properties
+- Make reservations
+- View reservations
 
-### Locataire
+### Owner Features
 
-- Consultation des logements
-- Recherche par critères
-- Réservation de logements
-- Consultation des réservations
+- Manage properties
+- View reservations
+- Add and delete properties
 
-### Propriétaire
+### Oracle Database
 
-- Gestion des biens immobiliers
-- Consultation des réservations
-- Ajout et suppression de biens
-
-### Base de données Oracle
-
-- Tables relationnelles
-- Vues SQL
-- Procédures PL/SQL
+- Relational tables
+- SQL views
+- PL/SQL procedures
 - Triggers
-- Contraintes d'intégrité
+- Constraints
+
+## Project Structure
 
 
-
-## Structure du projet
 app.py
 
 templates/
-
 index.html
-
 auth_login.html
-
 auth_register.html
-
 owner_dashboard.html
-
 tenant_dashboard.html
-
 property_detail.html
 
+static/
+
 sql/
-
 script_sql.sql
-
 code_sql_pl.sql
 
 requirements.txt
@@ -70,29 +63,31 @@ requirements.txt
 
 ## Installation
 
-### 1 Installation Oracle XE
-Créer un utilisateur Oracle :
+### 1 - Oracle Database Setup
 
-User :
+Create an Oracle user:
 
-Password :
+User:
+Password:
+DSN:
+localhost:1521/XEPDB1
 
-DSN :localhost:1521/XEPDB1
+### 2 - Run SQL Scripts
+Execute the following scripts using Oracle SQL Developer:
 
-### 2 Exécuter les scripts SQL
-Exécuter : 
 sql/script_sql.sql
 sql/code_sql_pl.sql
 
-dans Oracle SQL Developer.
 
-### 3 Installer les dépendances
+### 3 - Install Dependencies
 pip install -r requirements.txt
 
-### 4 Lancer l'application
+
+### 4 - Run the Application
 python app.py
-Puis ouvrir :
+Then open:
 http://localhost:5000
 
+## Author
 
-
+Engineering Student – ENSA Agadir (Data / AI)
