@@ -5,14 +5,11 @@ from datetime import date, datetime
 app = Flask(__name__)
 app.secret_key = "super_secret"
 
-DB_USER = "airbnb_v2"
-DB_PASSWORD = "airbnb"
+DB_USER = ""
+DB_PASSWORD = ""
 DB_DSN = "localhost:1521/XEPDB1"
 
 
-# -----------------------------
-# DB helpers
-# -----------------------------
 def get_db():
     conn = oracledb.connect(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN)
     conn.autocommit = False
@@ -20,8 +17,8 @@ def get_db():
 def get_db_cursor():
 
     conn = oracledb.connect(
-        user="airbnb_v2",
-        password="airbnb",
+        user="",
+        password="",
         dsn="localhost:1521/XEPDB1"
     )
 
@@ -32,9 +29,6 @@ def rows_to_dicts(cursor, rows):
     return [dict(zip(cols, r)) for r in rows]
 
 
-# -----------------------------
-# Auth / Guards
-# -----------------------------
 def current_user():
     if "user_id" not in session:
         return None
@@ -66,9 +60,7 @@ def inject_user():
     return {"me": current_user()}
 
 
-# -----------------------------
-# Public: Home + Search
-# -----------------------------
+
 @app.route("/")
 def home():
     conn, cursor = get_db_cursor()
@@ -123,14 +115,14 @@ def bien_detail(id_bien):
         cols = [c[0].lower() for c in cur.description]
         bien = dict(zip(cols, row))
 
-        # photos (galerie)
+     
         cur.execute(
             "SELECT id_photo, url_photo, description_alt, est_principale FROM PHOTO_BIEN WHERE id_bien = :1 ORDER BY est_principale DESC, id_photo DESC",
             [id_bien],
         )
         photos = rows_to_dicts(cur, cur.fetchall())
 
-        # avis (optionnel)
+   
         cur.execute(
             """
             SELECT a.note, a.commentaire, a.date_avis
@@ -149,9 +141,6 @@ def bien_detail(id_bien):
         conn.close()
 
 
-# -----------------------------
-# Reservation (Locataire)
-# -----------------------------
 @app.route("/reservation/create", methods=["POST"])
 def reservation_create():
     if not role_required("Locataire"):
@@ -173,7 +162,6 @@ def reservation_create():
 
     conn, cur = get_db()
     try:
-        # Procedure PL/SQL creerReservation :contentReference[oaicite:10]{index=10}
         cur.callproc("creerReservation", [session["user_id"], id_bien, d1, d2])
         conn.commit()
         flash("Demande de réservation envoyée (EN_ATTENTE).", "success")
@@ -194,7 +182,6 @@ def tenant_dashboard():
 
     conn, cur = get_db()
     try:
-        # get_mes_reservations :contentReference[oaicite:11]{index=11}
         ref = cur.callfunc("get_mes_reservations", oracledb.CURSOR, [session["user_id"]])
         reservations = []
         for r in ref:
@@ -211,7 +198,7 @@ def tenant_dashboard():
                 }
             )
 
-        # paiement status par reservation (si confirmée)
+   
         pay_status = {}
         for res in reservations:
             if res["statut"] == "CONFIRMEE":
@@ -244,7 +231,7 @@ def tenant_pay():
 
     conn, cur = get_db()
     try:
-        # retrouver location
+    
         cur.execute("SELECT id_location FROM LOCATION WHERE id_reservation = :1", [id_res])
         row = cur.fetchone()
         if not row:
@@ -253,7 +240,7 @@ def tenant_pay():
 
         id_loc = row[0]
 
-        # genererPaiement + validerPaiement :contentReference[oaicite:12]{index=12}
+       
         cur.callproc("genererPaiement", [id_loc, "CB"])
         cur.execute("SELECT MAX(id_paiement) FROM PAIEMENT WHERE id_location = :1", [id_loc])
         id_pay = cur.fetchone()[0]
@@ -289,7 +276,7 @@ def tenant_review():
             return redirect(url_for("tenant_dashboard"))
         id_loc = row[0]
 
-        # 1 avis par location (uq_avis_location) :contentReference[oaicite:13]{index=13}
+      
         cur.execute(
             "INSERT INTO AVIS_BIEN(note, commentaire, id_location) VALUES (:1, :2, :3)",
             [note, commentaire, id_loc],
@@ -306,9 +293,6 @@ def tenant_review():
         conn.close()
 
 
-# -----------------------------
-# Owner (Proprietaire)
-# -----------------------------
 @app.route("/owner", methods=["GET"])
 def owner_dashboard():
     if not role_required("Proprietaire"):
@@ -316,11 +300,10 @@ def owner_dashboard():
 
     conn, cur = get_db()
     try:
-        # Mes biens (fonction)
+        
         ref = cur.callfunc("get_mes_biens", oracledb.CURSOR, [session["user_id"]])
         my_biens = []
         for r in ref:
-            # SELECT * FROM BIEN => on garde simple
             my_biens.append(
                 {
                     "id_bien": r[0],
@@ -336,7 +319,7 @@ def owner_dashboard():
                 }
             )
 
-        # Demandes reçues: requête adaptée de ton Streamlit :contentReference[oaicite:14]{index=14}
+       
         cur.execute(
             """
             SELECT r.id_reservation,
@@ -373,7 +356,6 @@ def owner_accept():
 
     conn, cur = get_db()
     try:
-        # procedure confirmerReservation :contentReference[oaicite:15]{index=15}
         cur.callproc("confirmerReservation", [id_res])
         conn.commit()
         flash("Réservation acceptée (CONFIRMEE + LOCATION créée).", "success")
@@ -455,7 +437,7 @@ def owner_new_bien():
             [photo_url, new_id],
         )
 
-        # publier l'annonce via PL/SQL :contentReference[oaicite:16]{index=16}
+   
         cur.callproc("creerAnnonce", [new_id])
 
         conn.commit()
@@ -470,9 +452,6 @@ def owner_new_bien():
         conn.close()
 
 
-# -----------------------------
-# Auth: login/register/logout
-# -----------------------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -483,7 +462,6 @@ def login():
 
     conn, cur = get_db()
     try:
-        # seConnecter (hash en DB) :contentReference[oaicite:17]{index=17}
         user_id = cur.callfunc("seConnecter", oracledb.NUMBER, [username, password])
         if not user_id:
             flash("Identifiants invalides.", "error")
@@ -519,7 +497,7 @@ def register():
     email = (request.form.get("email") or "").strip()
     telephone = (request.form.get("telephone") or "").strip()
     password = (request.form.get("password") or "").strip()
-    role = (request.form.get("role") or "").strip()  # "Locataire" ou "Proprietaire"
+    role = (request.form.get("role") or "").strip() 
 
     if role not in ("Locataire", "Proprietaire"):
         flash("Rôle invalide.", "error")
@@ -527,10 +505,8 @@ def register():
 
     conn, cur = get_db()
     try:
-        # sInscrire :contentReference[oaicite:18]{index=18}
+      
         cur.callproc("sInscrire", [login_db, nom, prenom, email, telephone, password, role])
-
-        # IMPORTANT: sInscrire n'insère que dans UTILISATEUR, donc on crée la ligne LOCATAIRE/PROPRIETAIRE :contentReference[oaicite:19]{index=19}
         cur.execute("SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = :1", [login_db])
         uid = cur.fetchone()[0]
 
@@ -559,6 +535,7 @@ def logout():
 
 
 if __name__ == '__main__':
+
 
 
     app.run(debug=True)
