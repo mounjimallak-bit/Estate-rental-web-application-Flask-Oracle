@@ -15,8 +15,9 @@
         <p class="text-gray-500 text-sm">{{ me.name }}</p>
       </div>
       <div class="flex gap-3">
-        <a href="{{ url_for('owner_new_bien') }}" class="bg-gray-900 text-white text-sm font-semibold rounded-lg px-3 py-2">
-          + Nouveau bien
+        <a href="{{ url_for('owner_new_bien') }}"
+           class="inline-flex items-center px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold">
+            + Publier un nouveau bien
         </a>
         <a href="{{ url_for('logout') }}" class="text-sm font-semibold text-gray-600">Déconnexion</a>
       </div>
@@ -38,23 +39,57 @@
     {% endwith %}
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-
+    
       <div class="border rounded-xl p-5">
-        <div class="font-bold text-lg">Inventaire</div>
+        <div class="flex items-center justify-between">
+          <div class="font-bold text-lg">Inventaire</div>
+          <div class="text-xs text-gray-500">{{ my_biens|length }} bien(s)</div>
+        </div>
+
         <div class="mt-4 space-y-3">
           {% if my_biens|length == 0 %}
             <div class="text-gray-600">Aucun bien.</div>
           {% endif %}
+
           {% for b in my_biens %}
             <div class="border rounded-lg p-4">
-              <div class="font-semibold">{{ b.titre }}</div>
-              <div class="text-sm text-gray-500">{{ b.ville }} • {{ b.prix }} DH/nuit • Cap {{ b.capacite }}</div>
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="font-semibold">{{ b.titre }}</div>
+                  <div class="text-sm text-gray-500">{{ b.ville }} • {{ b.prix }} DH/nuit • Cap {{ b.capacite }}</div>
+                </div>
+
+                <div class="flex flex-col items-end gap-2">
+                  <a href="{{ url_for('bien_detail', id_bien=b.id_bien) }}"
+                     class="text-xs px-3 py-2 rounded-lg border hover:bg-gray-50">
+                    Voir
+                  </a>
+                </div>
+              </div>
+
+              <div class="flex gap-2 mt-3">
+                <a href="{{ url_for('owner_edit_bien', id_bien=b.id_bien) }}"
+                   class="text-sm px-3 py-2 rounded-lg border hover:bg-gray-50">
+                  Modifier
+                </a>
+
+                <form action="{{ url_for('owner_delete_bien', id_bien=b.id_bien) }}" method="post"
+                      onsubmit="return confirm('Supprimer ce bien ? Cette action est irréversible.');">
+                  <button class="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">
+                    Supprimer
+                  </button>
+                </form>
+              </div>
+
+              {% if b.note_moyenne %}
+                <div class="text-xs text-gray-500 mt-2">Note moyenne: {{ b.note_moyenne }}</div>
+              {% endif %}
             </div>
           {% endfor %}
         </div>
       </div>
 
-     
+    
       <div class="border rounded-xl p-5">
         <div class="font-bold text-lg">Demandes de réservation</div>
         <div class="mt-4 space-y-3">
@@ -94,5 +129,4 @@
 
   </div>
 </body>
-
 </html>
