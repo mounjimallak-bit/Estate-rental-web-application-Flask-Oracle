@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Espace propriétaire</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white">
+  <div class="max-w-6xl mx-auto px-4 py-10">
+    <div class="flex items-center justify-between">
+      <div>
+        <a href="/" class="text-rose-500 font-bold text-2xl">immomarket</a>
+        <h1 class="text-2xl font-bold mt-2">Espace Propriétaire</h1>
+        <p class="text-gray-500 text-sm">{{ me.name }}</p>
+      </div>
+      <div class="flex gap-3">
+        <a href="{{ url_for('owner_new_bien') }}" class="bg-gray-900 text-white text-sm font-semibold rounded-lg px-3 py-2">
+          + Nouveau bien
+        </a>
+        <a href="{{ url_for('logout') }}" class="text-sm font-semibold text-gray-600">Déconnexion</a>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-2 mt-6">
+          {% for cat, msg in messages %}
+            <div class="text-sm px-4 py-3 rounded-lg border
+              {% if cat=='success' %} bg-green-50 border-green-200 text-green-700
+              {% elif cat=='warning' %} bg-yellow-50 border-yellow-200 text-yellow-700
+              {% else %} bg-red-50 border-red-200 text-red-700 {% endif %}">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+      <!-- Inventaire -->
+      <div class="border rounded-xl p-5">
+        <div class="font-bold text-lg">Inventaire</div>
+        <div class="mt-4 space-y-3">
+          {% if my_biens|length == 0 %}
+            <div class="text-gray-600">Aucun bien.</div>
+          {% endif %}
+          {% for b in my_biens %}
+            <div class="border rounded-lg p-4">
+              <div class="font-semibold">{{ b.titre }}</div>
+              <div class="text-sm text-gray-500">{{ b.ville }} • {{ b.prix }} DH/nuit • Cap {{ b.capacite }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Demandes -->
+      <div class="border rounded-xl p-5">
+        <div class="font-bold text-lg">Demandes de réservation</div>
+        <div class="mt-4 space-y-3">
+          {% if demandes|length == 0 %}
+            <div class="text-gray-600">Aucune demande.</div>
+          {% endif %}
+
+          {% for d in demandes %}
+            <div class="border rounded-lg p-4">
+              <div class="font-semibold">{{ d.nom_bien }}</div>
+              <div class="text-sm text-gray-500">
+                Client: {{ d.client }} • {{ d.date_debut }} → {{ d.date_fin }}
+              </div>
+              <div class="text-sm mt-2">Statut: <span class="font-semibold">{{ d.statut }}</span></div>
+
+              {% if d.statut == 'EN_ATTENTE' %}
+              <div class="flex gap-2 mt-3">
+                <form method="post" action="{{ url_for('owner_accept') }}">
+                  <input type="hidden" name="id_reservation" value="{{ d.id_reservation }}">
+                  <button class="bg-green-600 text-white text-sm font-semibold rounded-lg px-3 py-2">
+                    Accepter
+                  </button>
+                </form>
+                <form method="post" action="{{ url_for('owner_reject') }}">
+                  <input type="hidden" name="id_reservation" value="{{ d.id_reservation }}">
+                  <button class="bg-red-600 text-white text-sm font-semibold rounded-lg px-3 py-2">
+                    Refuser
+                  </button>
+                </form>
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white">
+  <div class="max-w-md mx-auto px-4 py-10">
+    <a href="/" class="text-rose-500 font-bold text-2xl">immomarket</a>
+    <h1 class="text-2xl font-bold mt-6">Connexion</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-2 mt-4">
+          {% for cat, msg in messages %}
+            <div class="text-sm px-4 py-3 rounded-lg border
+              {% if cat=='success' %} bg-green-50 border-green-200 text-green-700
+              {% elif cat=='warning' %} bg-yellow-50 border-yellow-200 text-yellow-700
+              {% else %} bg-red-50 border-red-200 text-red-700 {% endif %}">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="mt-6 space-y-3">
+      <input name="login" class="w-full border rounded-lg px-3 py-3" placeholder="Identifiant (login_db)" required>
+      <input name="password" type="password" class="w-full border rounded-lg px-3 py-3" placeholder="Mot de passe" required>
+      <button class="w-full bg-rose-500 text-white font-semibold rounded-lg px-3 py-3">Se connecter</button>
+    </form>
+
+    <p class="text-sm text-gray-500 mt-4">
+      Pas de compte ? <a class="text-rose-500 font-semibold" href="{{ url_for('register') }}">Créer un compte</a>
+    </p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bien immobilier | Locations de vacances</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .search-shadow { box-shadow: 0 3px 12px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.08); }
+  </style>
+</head>
+<body class="bg-white">
+
+<header class="border-b sticky top-0 bg-white z-50">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+    <a href="/" class="text-rose-500 text-3xl font-bold flex items-center">
+      <span class="hidden md:block">bien immobilier</span>
+    </a>
+
+    <!-- Barre recherche (GET /search) -->
+    <form action="{{ url_for('search') }}" method="get"
+          class="hidden md:flex items-center border rounded-full py-2 px-4 search-shadow transition hover:shadow-md">
+      <input name="ville" value="{{ (search_params.ville if search_params else '') }}"
+             class="px-2 text-sm outline-none w-36" placeholder="Ville (ex: Agadir)">
+      <div class="h-6 w-px bg-gray-200 mx-2"></div>
+      <input name="prix_max" value="{{ (search_params.prix_max if search_params else '') }}"
+             class="px-2 text-sm outline-none w-28" placeholder="Budget max">
+      <div class="h-6 w-px bg-gray-200 mx-2"></div>
+      <input name="nb_pers" value="{{ (search_params.nb_pers if search_params else '') }}"
+             class="px-2 text-sm outline-none w-20" placeholder="Pers.">
+      <button class="bg-rose-500 p-2 rounded-full ml-2 text-white text-xs" title="Rechercher">
+        <i class="fas fa-search"></i>
+      </button>
+    </form>
+
+    <!-- Menu user -->
+    <div class="flex items-center space-x-3">
+      {% if me %}
+        <span class="hidden md:block text-sm text-gray-600">{{ me.name }} • {{ me.role }}</span>
+
+        {% if me.role == 'Proprietaire' %}
+          <a href="{{ url_for('owner_dashboard') }}" class="text-sm font-semibold">Dashboard</a>
+        {% else %}
+          <a href="{{ url_for('tenant_dashboard') }}" class="text-sm font-semibold">Mes réservations</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="text-sm font-semibold text-gray-500">Déconnexion</a>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="text-sm font-semibold">Connexion</a>
+        <a href="{{ url_for('register') }}" class="text-sm font-semibold text-gray-500">Inscription</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<div class="max-w-7xl mx-auto px-4 flex space-x-8 py-6 overflow-x-auto text-gray-500 no-scrollbar">
+
+  <!-- TOUS (Logements) -->
+  <a href="{{ url_for('home') }}"
+     class="flex flex-col items-center space-y-2 min-w-max pb-2 cursor-pointer
+     {% if active_tab == 'all' %}
+        border-b-2 border-black text-black
+     {% else %}
+        opacity-60 hover:opacity-100 transition
+     {% endif %}">
+    <i class="fas fa-home text-xl"></i>
+    <span class="text-xs font-medium">Logements</span>
+  </a>
+
+  <!-- PISCINE -->
+  <a href="{{ url_for('search') }}?type=Piscine"
+     class="flex flex-col items-center space-y-2 min-w-max pb-2 cursor-pointer
+     {% if active_tab == 'piscine' %}
+        border-b-2 border-black text-black
+     {% else %}
+        opacity-60 hover:opacity-100 transition
+     {% endif %}">
+    <i class="fas fa-swimming-pool text-xl"></i>
+    <span class="text-xs font-medium">Piscines</span>
+  </a>
+
+  <!-- MER -->
+  <a href="{{ url_for('search') }}?type=Mer"
+     class="flex flex-col items-center space-y-2 min-w-max pb-2 cursor-pointer
+     {% if active_tab == 'mer' %}
+        border-b-2 border-black text-black
+     {% else %}
+        opacity-60 hover:opacity-100 transition
+     {% endif %}">
+    <i class="fas fa-umbrella-beach text-xl"></i>
+    <span class="text-xs font-medium">Bord de mer</span>
+  </a>
+
+</div>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <!-- flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="space-y-2 mb-6">
+        {% for cat, msg in messages %}
+          <div class="text-sm px-4 py-3 rounded-lg border
+               {% if cat=='success' %} bg-green-50 border-green-200 text-green-700
+               {% elif cat=='warning' %} bg-yellow-50 border-yellow-200 text-yellow-700
+               {% else %} bg-red-50 border-red-200 text-red-700 {% endif %}">
+            {{ msg }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+    {% for bien in biens %}
+    <div class="group">
+      <a href="{{ url_for('bien_detail', id_bien=bien.id_bien) }}" class="block cursor-pointer">
+        <div class="relative aspect-square overflow-hidden rounded-xl mb-3">
+          <img src="{{ bien.photo_principale or 'https://via.placeholder.com/400' }}"
+               class="object-cover h-full w-full group-hover:scale-105 transition duration-300">
+
+          {% if bien.note_moyenne and bien.note_moyenne|float >= 4.8 %}
+          <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm text-[12px] font-bold">
+            Coup de cœur voyageurs
+          </div>
+          {% endif %}
+
+          <div class="absolute top-3 right-3 text-white text-xl opacity-70 hover:opacity-100 transition">
+            <i class="far fa-heart"></i>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-start">
+          <h3 class="font-bold text-[15px]">{{ bien.ville }}, Maroc</h3>
+          <div class="flex items-center space-x-1 text-sm">
+            <i class="fas fa-star text-[12px]"></i>
+            <span>{{ bien.note_moyenne if bien.note_moyenne else 'Nouveau' }}</span>
+          </div>
+        </div>
+        <p class="text-gray-500 text-sm leading-tight">{{ bien.titre }}</p>
+        <p class="text-gray-500 text-sm mb-1">Disponible immédiatement</p>
+        <p class="mt-1"><span class="font-bold">{{ bien.prix }} DH</span> <span class="text-gray-600">par nuit</span></p>
+      </a>
+
+      <!-- Réservation rapide (uniquement si locataire connecté) -->
+      <div class="mt-3">
+        {% if me and me.role == 'Locataire' %}
+          <form action="{{ url_for('reservation_create') }}" method="post" class="flex gap-2 items-center">
+            <input type="hidden" name="id_bien" value="{{ bien.id_bien }}">
+            <input type="date" name="date_debut" class="border rounded-lg px-2 py-2 text-sm w-1/2" required>
+            <input type="date" name="date_fin" class="border rounded-lg px-2 py-2 text-sm w-1/2" required>
+            <button class="w-full bg-rose-500 text-white text-sm font-semibold rounded-lg px-3 py-2 hover:opacity-90">
+              Réserver
+            </button>
+          </form>
+        {% elif not me %}
+          <a href="{{ url_for('login') }}" class="block text-center bg-gray-900 text-white text-sm font-semibold rounded-lg px-3 py-2 hover:opacity-90">
+            Se connecter pour réserver
+          </a>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</main>
+
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ bien.titre }} | ImmoMarket</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white">
+  <div class="max-w-6xl mx-auto px-4 py-10">
+    <div class="flex items-center justify-between">
+      <a href="/" class="text-rose-500 font-bold text-2xl">immomarket</a>
+      <div class="flex gap-3">
+        {% if me %}
+          <span class="text-sm text-gray-600">{{ me.name }} • {{ me.role }}</span>
+          <a href="{{ url_for('logout') }}" class="text-sm font-semibold text-gray-600">Déconnexion</a>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="text-sm font-semibold">Connexion</a>
+          <a href="{{ url_for('register') }}" class="text-sm font-semibold text-gray-500">Inscription</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <h1 class="text-3xl font-bold mt-6">{{ bien.titre }}</h1>
+    <p class="text-gray-500 mt-1">{{ bien.ville }}, Maroc • {{ bien.prix }} DH/nuit • Capacité {{ bien.capacite }}</p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+      <div class="lg:col-span-2">
+        <div class="grid grid-cols-2 gap-3">
+          {% for p in photos[:4] %}
+            <img src="{{ p.url_photo }}" class="w-full h-56 object-cover rounded-xl border">
+          {% endfor %}
+        </div>
+        <div class="mt-6 border rounded-xl p-5">
+          <div class="font-semibold">Description</div>
+          <p class="text-gray-600 mt-2">{{ bien.description }}</p>
+        </div>
+
+        <div class="mt-6 border rounded-xl p-5">
+          <div class="font-semibold">Avis</div>
+          <div class="mt-3 space-y-3">
+            {% if avis|length == 0 %}
+              <div class="text-gray-600">Aucun avis.</div>
+            {% endif %}
+            {% for a in avis %}
+              <div class="border rounded-lg p-4">
+                <div class="font-semibold">Note: {{ a.note }}/5</div>
+                <div class="text-sm text-gray-600 mt-1">{{ a.commentaire }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="border rounded-xl p-5 h-fit sticky top-6">
+        <div class="text-xl font-bold">{{ bien.prix }} DH <span class="text-sm text-gray-500 font-normal">/ nuit</span></div>
+
+        {% if me and me.role == 'Locataire' %}
+          <form action="{{ url_for('reservation_create') }}" method="post" class="mt-4 space-y-3">
+            <input type="hidden" name="id_bien" value="{{ bien.id_bien }}">
+            <div>
+              <label class="text-sm text-gray-600">Arrivée</label>
+              <input type="date" name="date_debut" class="w-full border rounded-lg px-3 py-3" required>
+            </div>
+            <div>
+              <label class="text-sm text-gray-600">Départ</label>
+              <input type="date" name="date_fin" class="w-full border rounded-lg px-3 py-3" required>
+            </div>
+            <button class="w-full bg-rose-500 text-white font-semibold rounded-lg px-3 py-3">
+              Demander une réservation
+            </button>
+          </form>
+        {% elif not me %}
+          <a href="{{ url_for('login') }}" class="mt-4 block text-center bg-gray-900 text-white font-semibold rounded-lg px-3 py-3">
+            Se connecter pour réserver
+          </a>
+        {% else %}
+          <div class="mt-4 text-sm text-gray-600">
+            Connecté en <b>{{ me.role }}</b> (réservation réservée aux locataires).
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

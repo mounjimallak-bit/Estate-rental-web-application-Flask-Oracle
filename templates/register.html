@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Inscription | ImmoMarket</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white">
+  <div class="max-w-md mx-auto p-6">
+    <h1 class="text-2xl font-bold">Inscription</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="mt-4 space-y-2">
+          {% for m in messages %}
+            <div class="p-3 rounded-lg bg-rose-50 text-rose-700 text-sm">{{ m }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" class="mt-6 space-y-3">
+      <input name="login_db" placeholder="Login" class="w-full border rounded-lg p-3" required/>
+      <input name="nom" placeholder="Nom" class="w-full border rounded-lg p-3"/>
+      <input name="prenom" placeholder="Prénom" class="w-full border rounded-lg p-3"/>
+      <input name="email" type="email" placeholder="Email" class="w-full border rounded-lg p-3" required/>
+      <input name="telephone" placeholder="Téléphone" class="w-full border rounded-lg p-3"/>
+      <input name="mdp" type="password" placeholder="Mot de passe" class="w-full border rounded-lg p-3" required/>
+
+      <select name="role_app" class="w-full border rounded-lg p-3" required>
+        <option value="">Choisir un rôle</option>
+        <option value="Locataire">Locataire</option>
+        <option value="Proprietaire">Propriétaire</option>
+      </select>
+
+      <button class="w-full bg-rose-500 text-white rounded-lg py-3 font-semibold">Créer le compte</button>
+    </form>
+
+    <p class="mt-4 text-sm text-gray-500">
+      Déjà un compte ? <a class="text-rose-500 font-semibold" href="{{ url_for('login') }}">Se connecter</a>
+    </p>
+  </div>
+</body>
+</html>

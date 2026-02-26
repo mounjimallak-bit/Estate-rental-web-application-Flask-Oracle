@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nouveau bien</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white">
+  <div class="max-w-xl mx-auto px-4 py-10">
+    <a href="{{ url_for('owner_dashboard') }}" class="text-sm text-gray-600">← Retour</a>
+    <h1 class="text-2xl font-bold mt-3">Publier un nouveau bien</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-2 mt-6">
+          {% for cat, msg in messages %}
+            <div class="text-sm px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-red-700">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="mt-6 space-y-3">
+      <input name="titre" class="w-full border rounded-lg px-3 py-3" placeholder="Titre" required>
+      <div class="grid grid-cols-2 gap-3">
+        <input name="ville" class="border rounded-lg px-3 py-3" placeholder="Ville" required>
+        <input name="adresse" class="border rounded-lg px-3 py-3" placeholder="Adresse (optionnel)">
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <input name="prix" type="number" step="0.01" class="border rounded-lg px-3 py-3" placeholder="Prix/nuit" required>
+        <input name="capacite" type="number" class="border rounded-lg px-3 py-3" placeholder="Capacité" value="2" required>
+        <input name="surface" type="number" step="0.01" class="border rounded-lg px-3 py-3" placeholder="Surface">
+      </div>
+
+      <select name="type_bien" class="w-full border rounded-lg px-3 py-3">
+        <option>Appartement</option>
+        <option>Villa</option>
+        <option>Maison</option>
+        <option>Studio</option>
+      </select>
+
+      <input name="photo_url" class="w-full border rounded-lg px-3 py-3" placeholder="URL photo principale (optionnel)">
+      <textarea name="description" class="w-full border rounded-lg px-3 py-3" rows="4" placeholder="Description"></textarea>
+
+      <button class="w-full bg-gray-900 text-white font-semibold rounded-lg px-3 py-3">
+        Publier
+      </button>
+    </form>
+  </div>
+</body>
+</html>
