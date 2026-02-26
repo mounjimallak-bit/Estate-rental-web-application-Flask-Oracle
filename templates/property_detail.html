@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ bien.titre }} | ImmoMarket</title>
+  <title>{{ bien.titre }} | bien immobilier</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-white">
   <div class="max-w-6xl mx-auto px-4 py-10">
     <div class="flex items-center justify-between">
-      <a href="/" class="text-rose-500 font-bold text-2xl">immomarket</a>
+      <a href="/" class="text-rose-500 font-bold text-2xl">bien immobilier</a>
       <div class="flex gap-3">
         {% if me %}
           <span class="text-sm text-gray-600">{{ me.name }} • {{ me.role }}</span>
@@ -27,10 +27,16 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
       <div class="lg:col-span-2">
         <div class="grid grid-cols-2 gap-3">
-          {% for p in photos[:4] %}
-            <img src="{{ p.url_photo }}" class="w-full h-56 object-cover rounded-xl border">
-          {% endfor %}
+          {% if photos and photos|length > 0 %}
+            {% for p in photos[:4] %}
+              <img src="{{ p.url_photo }}" class="w-full h-56 object-cover rounded-xl border" alt="Photo du bien">
+            {% endfor %}
+          {% else %}
+            <img src="https://via.placeholder.com/900x600?text=ImmoMarket" class="w-full h-56 object-cover rounded-xl border" alt="Photo du bien">
+            <img src="https://via.placeholder.com/900x600?text=ImmoMarket" class="w-full h-56 object-cover rounded-xl border" alt="Photo du bien">
+          {% endif %}
         </div>
+
         <div class="mt-6 border rounded-xl p-5">
           <div class="font-semibold">Description</div>
           <p class="text-gray-600 mt-2">{{ bien.description }}</p>
@@ -56,20 +62,43 @@
         <div class="text-xl font-bold">{{ bien.prix }} DH <span class="text-sm text-gray-500 font-normal">/ nuit</span></div>
 
         {% if me and me.role == 'Locataire' %}
-          <form action="{{ url_for('reservation_create') }}" method="post" class="mt-4 space-y-3">
+          <form action="{{ url_for('reservation_create') }}" method="post" class="mt-4 space-y-3" id="reservationForm">
             <input type="hidden" name="id_bien" value="{{ bien.id_bien }}">
+
             <div>
               <label class="text-sm text-gray-600">Arrivée</label>
               <input type="date" name="date_debut" class="w-full border rounded-lg px-3 py-3" required>
             </div>
+
             <div>
               <label class="text-sm text-gray-600">Départ</label>
               <input type="date" name="date_fin" class="w-full border rounded-lg px-3 py-3" required>
             </div>
-            <button class="w-full bg-rose-500 text-white font-semibold rounded-lg px-3 py-3">
+
+            <!--  Disponibilités -->
+            <div class="mt-1 text-sm text-gray-600">
+              <p class="font-semibold mb-1">Disponibilités</p>
+              <p id="availabilityMsg">Choisis tes dates pour vérifier la disponibilité.</p>
+
+              <div class="mt-2">
+                <p class="text-xs text-gray-500 mb-1">Périodes déjà réservées :</p>
+                <ul class="text-xs text-gray-500 list-disc ml-5">
+                  {% if indispos and indispos|length > 0 %}
+                    {% for r in indispos %}
+                      <li>{{ r.start }} → {{ r.end }}</li>
+                    {% endfor %}
+                  {% else %}
+                    <li>Aucune réservation </li>
+                  {% endif %}
+                </ul>
+              </div>
+            </div>
+
+            <button type="submit" class="w-full bg-rose-500 text-white font-semibold rounded-lg px-3 py-3" id="reserveBtn">
               Demander une réservation
             </button>
           </form>
+
         {% elif not me %}
           <a href="{{ url_for('login') }}" class="mt-4 block text-center bg-gray-900 text-white font-semibold rounded-lg px-3 py-3">
             Se connecter pour réserver
@@ -82,5 +111,69 @@
       </div>
     </div>
   </div>
+
+ 
+  <script>
+    const bookedRanges = {{ (indispos or [])|tojson }};
+
+    function toDate(s){ return new Date(s + "T00:00:00"); }
+    function overlaps(sa, ea, sb, eb){ return (sa <= eb) && (ea >= sb); }
+
+    const arrival = document.querySelector('input[name="date_debut"]');
+    const depart  = document.querySelector('input[name="date_fin"]');
+    const msg     = document.getElementById("availabilityMsg");
+    const btn     = document.getElementById("reserveBtn");
+
+    function setBtnDisabled(disabled){
+      if(!btn) return;
+      btn.disabled = disabled;
+      btn.classList.toggle("opacity-50", disabled);
+      btn.classList.toggle("cursor-not-allowed", disabled);
+    }
+
+    function checkAvailability() {
+      if (!arrival || !depart || !msg) return;
+
+      const a = arrival.value;
+      const b = depart.value;
+
+      if (!a || !b) {
+        msg.textContent = "Choisis tes dates pour vérifier la disponibilité.";
+        msg.className = "text-sm text-gray-600";
+        setBtnDisabled(false);
+        return;
+      }
+
+      const start = toDate(a);
+      const end = toDate(b);
+
+      if (end <= start) {
+        msg.textContent = " La date de départ doit être après la date d'arrivée.";
+        msg.className = "text-sm text-red-600 font-semibold";
+        setBtnDisabled(true);
+        return;
+      }
+
+      let conflict = false;
+      for (const r of bookedRanges) {
+        const rs = toDate(r.start);
+        const re = toDate(r.end);
+        if (overlaps(start, end, rs, re)) { conflict = true; break; }
+      }
+
+      if (conflict) {
+        msg.textContent = " Indisponible : déjà réservé sur cette période.";
+        msg.className = "text-sm text-red-600 font-semibold";
+        setBtnDisabled(true);
+      } else {
+        msg.textContent = "Disponible : tu peux réserver.";
+        msg.className = "text-sm text-green-600 font-semibold";
+        setBtnDisabled(false);
+      }
+    }
+
+    if (arrival) arrival.addEventListener("change", checkAvailability);
+    if (depart)  depart.addEventListener("change", checkAvailability);
+  </script>
 </body>
 </html>
