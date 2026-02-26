@@ -23,7 +23,7 @@
       {% endif %}
     {% endwith %}
 
-    <form method="post" class="mt-6 space-y-3">
+    <form method="post" action="{{ url_for('owner_new_bien') }}" class="mt-6 space-y-3">
       <input name="titre" class="w-full border rounded-lg px-3 py-3" placeholder="Titre" required>
       <div class="grid grid-cols-2 gap-3">
         <input name="ville" class="border rounded-lg px-3 py-3" placeholder="Ville" required>
