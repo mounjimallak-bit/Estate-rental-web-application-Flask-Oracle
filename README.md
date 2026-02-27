@@ -145,11 +145,9 @@ requirements.txt
 
 Create Oracle user:
 
-
-DB_USER=your_username
-DB_PASSWORD=your_password
-DB_DSN=localhost:1521/XEPDB1
-
+User: your_username  
+Password: your_password  
+DSN: localhost:1521/XEPDB1
 
 ---
 
@@ -196,7 +194,12 @@ http://localhost:5000
 
 ---
 
-
+## Business Rules 
+- Role-based access: Tenant vs Owner
+- Reservation workflow with statuses (request → accept/reject → payment)
+- No overlapping reservations for the same property (availability check)
+- Owners can manage only their own listings
+- Tenants can review only after a confirmed stay
 
 ## Author
 
