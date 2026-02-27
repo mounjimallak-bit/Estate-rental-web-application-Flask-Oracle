@@ -12,7 +12,7 @@ This project demonstrates backend development, database design and business logi
 
 Video demonstration:
 
-https://www.youtube.com/watch?v=wPCk3RC8J3I
+https://youtu.be/xxOOS9JRwuo
 
 The demo shows:
 
