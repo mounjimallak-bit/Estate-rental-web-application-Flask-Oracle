@@ -66,37 +66,87 @@ def home():
     return render_template("index.html", biens=biens, active_tab="all")
 
 
-@app.route("/search")
+@app.route("/search", methods=["GET", "POST"])
 def search():
-    type_filtre = request.args.get("type")  # "Piscine" ou "Mer"
-
+    if request.method == "POST":
+        q = (request.form.get("q") or "").strip()
+        ville = (request.form.get("ville") or "").strip()
+        type_filtre = (request.form.get("type") or "").strip()
+        prix_min = (request.form.get("prix_min") or "").strip()
+        prix_max = (request.form.get("prix_max") or "").strip()
+        return redirect(url_for("search", q=q, ville=ville, type=type_filtre, prix_min=prix_min, prix_max=prix_max))
+    q = (request.args.get("q") or "").strip()
+    ville = (request.args.get("ville") or "").strip()
+    type_filtre = (request.args.get("type") or "").strip()  # Piscine / Mer / vide
+    prix_min = (request.args.get("prix_min") or "").strip()
+    prix_max = (request.args.get("prix_max") or "").strip()
     conn, cursor = get_db()
+    if not conn or not cursor:
+        flash("Erreur de connexion à la base de données.", "error")
+        return redirect(url_for("home"))
+    try:
+        sql = "SELECT * FROM VUE_BIENS_PUBLICS WHERE 1=1"
+        params = {}
 
-    if type_filtre == "Piscine":
-        cursor.execute("""
-            SELECT * FROM VUE_BIENS_PUBLICS
-            WHERE LOWER(description) LIKE '%piscine%'
-        """)
-        active_tab = "piscine"
+        if q:
+            sql += " AND (LOWER(titre) LIKE :q OR LOWER(description) LIKE :q)"
+            params["q"] = f"%{q.lower()}%"
+     
+        if ville:
+            sql += " AND LOWER(ville) LIKE :ville"
+            params["ville"] = f"%{ville.lower()}%"
 
-    elif type_filtre == "Mer":
-        cursor.execute("""
-            SELECT * FROM VUE_BIENS_PUBLICS
-            WHERE LOWER(description) LIKE '%mer%'
-               OR LOWER(description) LIKE '%plage%'
-               OR LOWER(description) LIKE '%bord de mer%'
-        """)
-        active_tab = "mer"
-
-    else:
-        cursor.execute("SELECT * FROM VUE_BIENS_PUBLICS")
         active_tab = "all"
+        if type_filtre == "Piscine":
+            sql += " AND LOWER(description) LIKE :piscine"
+            params["piscine"] = "%piscine%"
+            active_tab = "piscine"
+        elif type_filtre == "Mer":
+            sql += " AND (LOWER(description) LIKE :mer OR LOWER(description) LIKE :plage OR LOWER(description) LIKE :bord)"
+            params["mer"] = "%mer%"
+            params["plage"] = "%plage%"
+            params["bord"] = "%bord de mer%"
+            active_tab = "mer"
 
-    columns = [col[0].lower() for col in cursor.description]
-    biens = [dict(zip(columns, row)) for row in cursor.fetchall()]
-    conn.close()
+        if prix_min:
+            try:
+                sql += " AND prix >= :prix_min"
+                params["prix_min"] = float(prix_min)
+            except:
+                pass
 
-    return render_template("index.html", biens=biens, active_tab=active_tab)
+        if prix_max:
+            try:
+                sql += " AND prix <= :prix_max"
+                params["prix_max"] = float(prix_max)
+            except:
+                pass
+
+        sql += " ORDER BY id_bien DESC"
+
+        cursor.execute(sql, params)
+
+        columns = [col[0].lower() for col in cursor.description]
+        biens = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        
+        return render_template(
+            "index.html",
+            biens=biens,
+            active_tab=active_tab,
+            q=q,
+            ville=ville,
+            type_filtre=type_filtre,
+            prix_min=prix_min,
+            prix_max=prix_max
+        )
+
+    finally:
+        try:
+            cursor.close()
+        except:
+            pass
+        conn.close() 
 
 @app.route("/bien/<int:id_bien>", methods=["GET"])
 def bien_detail(id_bien):
@@ -764,4 +814,5 @@ if __name__ == '__main__':
 
 
     app.run(debug=True)
+
 
