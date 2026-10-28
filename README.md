@@ -57,7 +57,7 @@ Business rules implemented:
 - Only tenants can reserve
 - Only owners can manage properties
 - Reservations must be confirmed before payment
-- Reviews allowed only after completed stays
+- One review per confirmed rental
 
 ---
 
@@ -186,7 +186,7 @@ http://localhost:5000
 
 ## Security
 
-- Password hashing managed in Oracle PL/SQL
+- Passwords hashed in Oracle PL/SQL (MD5 without salt: to be replaced by a salted, slow hash before any real use)
 - Role-based access control
 - Session authentication
 - Owner-only property management
@@ -199,7 +199,7 @@ http://localhost:5000
 - Reservation workflow with statuses (request → accept/reject → payment)
 - No overlapping reservations for the same property (availability check)
 - Owners can manage only their own listings
-- Tenants can review only after a confirmed stay
+- Tenants can review a property once per confirmed rental
 
 ## Author
 
