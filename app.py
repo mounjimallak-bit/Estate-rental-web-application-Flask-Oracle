@@ -2,15 +2,19 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import oracledb
 from datetime import date, datetime
 import os
+from dotenv import load_dotenv
 
-
-
+load_dotenv()
 app = Flask(__name__)
-app.secret_key = ""
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or os.urandom(32)
 
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_DSN = os.getenv("DB_DSN")
+
+class BaseIndisponible(Exception):
+    """La connexion Oracle a échoué (identifiants absents ou base arrêtée)."""
+
 
 def get_db():
     try:
@@ -18,7 +22,15 @@ def get_db():
         return conn, conn.cursor()
     except oracledb.Error as e:
         print(f"Erreur de connexion Oracle : {e}")
-        return None, None
+        raise BaseIndisponible(str(e)) from e
+
+
+@app.errorhandler(BaseIndisponible)
+def base_indisponible(e):
+    # Message clair au lieu d'une erreur 500 quand la base n'est pas joignable.
+    return ("<h1>Base de données indisponible</h1>"
+            "<p>Vérifier que Oracle XE est démarré et que DB_USER, DB_PASSWORD et DB_DSN "
+            "sont définis dans le fichier .env (voir README).</p>"), 503
 
 def rows_to_dicts(cursor, rows):
     cols = [c[0].lower() for c in cursor.description]
@@ -108,18 +120,20 @@ def search():
             params["bord"] = "%bord de mer%"
             active_tab = "mer"
 
+                # Le filtre n'est ajouté que si la valeur est un nombre : sinon la requête
+        # contiendrait un paramètre sans valeur et Oracle la rejetterait.
         if prix_min:
             try:
-                sql += " AND prix >= :prix_min"
                 params["prix_min"] = float(prix_min)
-            except:
+                sql += " AND prix >= :prix_min"
+            except ValueError:
                 pass
 
         if prix_max:
             try:
-                sql += " AND prix <= :prix_max"
                 params["prix_max"] = float(prix_max)
-            except:
+                sql += " AND prix <= :prix_max"
+            except ValueError:
                 pass
 
         sql += " ORDER BY id_bien DESC"
@@ -811,8 +825,4 @@ def logout():
 
 
 if __name__ == '__main__':
-
-
-    app.run(debug=True)
-
-
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1")
