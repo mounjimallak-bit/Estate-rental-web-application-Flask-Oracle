@@ -141,15 +141,20 @@ requirements.txt
 
 ## Installation
 
-### 1 Install Oracle XE
+### 1 Install Oracle XE and configure the connection
 
-Create Oracle user:
+Create an Oracle user, then create a file named `.env` at the root of the project
+(it is git-ignored and never published):
 
-User: your_username  
-Password: your_password  
-DSN: localhost:1521/XEPDB1
+```
+DB_USER=your_username
+DB_PASSWORD=your_password
+DB_DSN=localhost:1521/XEPDB1
+FLASK_SECRET_KEY=any_long_random_string
+```
 
----
+If `FLASK_SECRET_KEY` is missing, a random key is generated at start-up (sessions are
+then lost on restart). Set `FLASK_DEBUG=1` only for local development.
 
 ### 2 Run SQL Scripts
 
