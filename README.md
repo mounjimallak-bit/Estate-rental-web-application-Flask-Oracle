@@ -1,5 +1,7 @@
 # Real Estate Rental Platform (Flask + Oracle PL/SQL)
 
+*Coursework project, ENSA Agadir, 2024. Uploaded to GitHub in 2026.*
+
 A full-stack real estate rental platform developed with **Flask** and **Oracle PL/SQL**.
 
 The application allows tenants to search and reserve properties while property owners manage listings and reservations.
