@@ -86,48 +86,38 @@ WHERE id_proprietaire = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db =
 --  PROCÉDURES ET FONCTIONS
 
 
--- sInscrire 
+-- sInscrire : reçoit un hash Argon2id calculé par l'application (securite_mdp.py), jamais un mot de
+-- passe en clair. Pas de COMMIT : l'application valide l'utilisateur et son rôle ensemble.
 CREATE OR REPLACE PROCEDURE sInscrire(
-    p_login VARCHAR2,
-    p_nom VARCHAR2,
-    p_prenom VARCHAR2,
-    p_email VARCHAR2,
+    p_login     VARCHAR2,
+    p_nom       VARCHAR2,
+    p_prenom    VARCHAR2,
+    p_email     VARCHAR2,
     p_telephone VARCHAR2,
-    p_mdp VARCHAR2,
-    p_role_app VARCHAR2
+    p_mdp_hache VARCHAR2,
+    p_role_app  VARCHAR2
 ) IS
     v_id NUMBER;
-    v_mdp_hache VARCHAR2(200);
 BEGIN
-    v_mdp_hache := RAWTOHEX(DBMS_CRYPTO.HASH(UTL_I18N.STRING_TO_RAW(p_mdp,'AL32UTF8'), DBMS_CRYPTO.HASH_MD5));
-    
+    IF p_mdp_hache IS NULL OR SUBSTR(p_mdp_hache, 1, 10) <> '$argon2id$' THEN
+        RAISE_APPLICATION_ERROR(-20001, 'sInscrire attend un hash Argon2id calculé par l''application.');
+    END IF;
     INSERT INTO UTILISATEUR(login_db, nom, prenom, email, telephone, mot_de_passe, role_app)
-    VALUES(p_login, p_nom, p_prenom, p_email, p_telephone, v_mdp_hache, p_role_app)
+    VALUES (p_login, p_nom, p_prenom, p_email, p_telephone, p_mdp_hache, p_role_app)
     RETURNING id_utilisateur INTO v_id;
-    
-    COMMIT;
-    DBMS_OUTPUT.PUT_LINE('Utilisateur créé id=' || v_id);
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        DBMS_OUTPUT.PUT_LINE('Erreur sInscrire: ' || SQLERRM);
-        RAISE;
 END;
 /
 
--- seConnecter
-CREATE OR REPLACE FUNCTION seConnecter(p_login VARCHAR2, p_mdp VARCHAR2) RETURN NUMBER IS
-    v_id NUMBER;
-    v_mdp_hache VARCHAR2(200);
+-- majMotDePasse : remplace le hash d'un compte (rehachage à la connexion des anciens comptes MD5).
+CREATE OR REPLACE PROCEDURE majMotDePasse(p_id NUMBER, p_mdp_hache VARCHAR2) IS
 BEGIN
-    v_mdp_hache := RAWTOHEX(DBMS_CRYPTO.HASH(UTL_I18N.STRING_TO_RAW(p_mdp,'AL32UTF8'), DBMS_CRYPTO.HASH_MD5));
-    SELECT id_utilisateur INTO v_id 
-    FROM UTILISATEUR 
-    WHERE login_db = p_login AND mot_de_passe = v_mdp_hache;
-    RETURN v_id;
-EXCEPTION
-    WHEN NO_DATA_FOUND THEN RETURN NULL;
-    WHEN OTHERS THEN RETURN NULL;
+    IF p_mdp_hache IS NULL OR SUBSTR(p_mdp_hache, 1, 10) <> '$argon2id$' THEN
+        RAISE_APPLICATION_ERROR(-20002, 'majMotDePasse attend un hash Argon2id.');
+    END IF;
+    UPDATE UTILISATEUR SET mot_de_passe = p_mdp_hache WHERE id_utilisateur = p_id;
+    IF SQL%ROWCOUNT <> 1 THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Utilisateur introuvable.');
+    END IF;
 END;
 /
 
@@ -612,12 +602,12 @@ DECLARE
     v_id_equip2 NUMBER;
 BEGIN
    
-    sInscrire('prop1', 'Dupont', 'Jean', 'jean@immo.com', '0611111111', '1234', 'Proprietaire');
+    sInscrire('prop1', 'Dupont', 'Jean', 'jean@immo.com', '0611111111', '$argon2id$v=19$m=65536,t=3,p=4$QQ30Ro6n6DVq1A6Yzppplw$F+RwCFcQqsAHGvA5kvnHrftp2PK/zKVkkwqO8jPzDh4', 'Proprietaire');
     SELECT id_utilisateur INTO v_id_prop FROM UTILISATEUR WHERE login_db = 'prop1';
     INSERT INTO PROPRIETAIRE(id_utilisateur) VALUES (v_id_prop);
 
    
-    sInscrire('loc1', 'Martin', 'Alice', 'alice@mail.com', '0622222222', '1234', 'Locataire');
+    sInscrire('loc1', 'Martin', 'Alice', 'alice@mail.com', '0622222222', '$argon2id$v=19$m=65536,t=3,p=4$QQ30Ro6n6DVq1A6Yzppplw$F+RwCFcQqsAHGvA5kvnHrftp2PK/zKVkkwqO8jPzDh4', 'Locataire');
     SELECT id_utilisateur INTO v_id_loc FROM UTILISATEUR WHERE login_db = 'loc1';
     INSERT INTO LOCATAIRE(id_utilisateur) VALUES (v_id_loc);
 

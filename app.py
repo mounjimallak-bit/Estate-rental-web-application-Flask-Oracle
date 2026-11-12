@@ -3,6 +3,7 @@ import oracledb
 from datetime import date, datetime
 import os
 from dotenv import load_dotenv
+from securite_mdp import hacher_mdp, verifier_mdp, verifier_identifiant_inconnu
 
 load_dotenv()
 app = Flask(__name__)
@@ -741,34 +742,48 @@ def owner_delete_bien(id_bien):
 
 
 
+MIN_LONGUEUR_MDP = 8   # NIST SP 800-63B : au moins 8 caractères
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
         return render_template("auth_login.html")
 
     username = (request.form.get("login") or "").strip()
-    password = (request.form.get("password") or "").strip()
+    password = (request.form.get("password") or "").strip()   # même traitement qu'à l'inscription
 
     conn, cur = get_db()
     try:
-        user_id = cur.callfunc("seConnecter", oracledb.NUMBER, [username, password])
-        if not user_id:
+        cur.execute("SELECT id_utilisateur, mot_de_passe, nom, prenom, role_app "
+                    "FROM UTILISATEUR WHERE login_db = :1", [username])
+        row = cur.fetchone()
+        if row is None:
+            verifier_identifiant_inconnu(password)   # même durée de réponse qu'un mot de passe faux
             flash("Identifiants invalides.", "error")
             return redirect(url_for("login"))
 
-        cur.execute("SELECT nom, prenom, role_app FROM UTILISATEUR WHERE id_utilisateur = :1", [user_id])
-        row = cur.fetchone()
-        if not row:
-            flash("Utilisateur introuvable.", "error")
+        user_id, hash_stocke, nom, prenom, role = row
+        valide, a_rehacher = verifier_mdp(hash_stocke, password)
+        if not valide:
+            flash("Identifiants invalides.", "error")
             return redirect(url_for("login"))
 
+        if a_rehacher:   # ancien MD5, ou paramètres Argon2 plus faibles : remplacement transparent
+            try:
+                cur.callproc("majMotDePasse", [user_id, hacher_mdp(password)])
+                conn.commit()
+            except oracledb.DatabaseError as e:
+                conn.rollback()   # la connexion reste valide ; le rehachage sera retenté à la prochaine
+                app.logger.warning("Rehachage du mot de passe impossible (utilisateur %s) : %s", user_id, e)
+
+        session.clear()   # nouvelle session à chaque connexion
         session["user_id"] = int(user_id)
-        session["user_name"] = f"{row[1]} {row[0]}"
-        session["user_role"] = row[2]
+        session["user_name"] = f"{prenom} {nom}"
+        session["user_role"] = role
 
         flash("Connexion réussie.", "success")
-
-        if session["user_role"] == "Proprietaire":
+        if role == "Proprietaire":
             return redirect(url_for("owner_dashboard"))
         return redirect(url_for("tenant_dashboard"))
     finally:
@@ -791,27 +806,32 @@ def register():
     if role not in ("Locataire", "Proprietaire"):
         flash("Rôle invalide.", "error")
         return redirect(url_for("register"))
+    if len(password) < MIN_LONGUEUR_MDP:
+        flash(f"Le mot de passe doit contenir au moins {MIN_LONGUEUR_MDP} caractères.", "error")
+        return redirect(url_for("register"))
+
+    mdp_hache = hacher_mdp(password)   # le mot de passe en clair n'est jamais envoyé à Oracle
 
     conn, cur = get_db()
     try:
-        cur.callproc("sInscrire", [login_db, nom, prenom, email, telephone, password, role])
-
-       
+        cur.callproc("sInscrire", [login_db, nom, prenom, email, telephone, mdp_hache, role])
         cur.execute("SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = :1", [login_db])
         uid = cur.fetchone()[0]
-
         if role == "Locataire":
             cur.execute("INSERT INTO LOCATAIRE(id_utilisateur) VALUES (:1)", [uid])
         else:
             cur.execute("INSERT INTO PROPRIETAIRE(id_utilisateur) VALUES (:1)", [uid])
-
-        conn.commit()
+        conn.commit()   # une seule validation : utilisateur et rôle, ou rien
         flash("Inscription validée. Connectez-vous.", "success")
         return redirect(url_for("login"))
     except oracledb.DatabaseError as e:
         conn.rollback()
         err, = e.args
-        flash(f"Erreur inscription : {err.message}", "error")
+        app.logger.warning("Inscription refusée : %s", err.message)   # détail côté serveur seulement
+        if getattr(err, "code", None) == 1:   # ORA-00001 : identifiant ou e-mail déjà utilisé
+            flash("Cet identifiant ou cet e-mail est déjà utilisé.", "error")
+        else:
+            flash("L'inscription n'a pas pu être enregistrée. Réessayez.", "error")
         return redirect(url_for("register"))
     finally:
         conn.close()

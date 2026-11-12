@@ -193,7 +193,8 @@ http://localhost:5000
 
 ## Security
 
-- Passwords hashed in Oracle PL/SQL (MD5 without salt: to be replaced by a salted, slow hash before any real use)
+- Passwords hashed with Argon2id in the Flask layer (`securite_mdp.py`, argon2-cffi: per-password random salt, parameters stored in the hash, constant-time verification); Oracle only stores the hash and `sInscrire` rejects anything that is not an Argon2id hash. Legacy MD5 hashes are upgraded at the next successful login (`sql/migration_mdp.sql` for existing databases). Tests: `python -m pytest -q tests`.
+- Demo accounts created by `sql/code_sql_pl.sql`: `prop1` and `loc1`, password `demo1234`.
 - Role-based access control
 - Session authentication
 - Owner-only property management
