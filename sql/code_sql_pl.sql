@@ -583,6 +583,52 @@ BEGIN
 END;
 /
 
+-- 9 bis. Aucun chevauchement entre réservations actives (EN_ATTENTE ou CONFIRMEE)
+-- d'un même bien, quelle que soit la façon dont la ligne est écrite : procédure,
+-- application ou INSERT/UPDATE direct (ROLE_LOCATAIRE a le droit INSERT sur RESERVATION).
+-- Le verrou sur la ligne du bien sérialise les écritures concurrentes : la seconde
+-- transaction attend la validation de la première, puis voit sa réservation.
+CREATE OR REPLACE TRIGGER trg_resa_sans_chevauchement
+FOR INSERT OR UPDATE OF id_bien, date_debut, date_fin, statut ON RESERVATION
+COMPOUND TRIGGER
+    TYPE t_biens IS TABLE OF BOOLEAN INDEX BY PLS_INTEGER;
+    g_biens t_biens;
+
+    AFTER EACH ROW IS
+    BEGIN
+        IF :NEW.statut IN ('EN_ATTENTE', 'CONFIRMEE') THEN
+            g_biens(:NEW.id_bien) := TRUE;
+        END IF;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_id       PLS_INTEGER := g_biens.FIRST;
+        v_verrou   NUMBER;
+        v_conflits NUMBER;
+    BEGIN
+        WHILE v_id IS NOT NULL LOOP
+            SELECT id_bien INTO v_verrou FROM BIEN WHERE id_bien = v_id FOR UPDATE;
+
+            SELECT COUNT(*) INTO v_conflits
+              FROM RESERVATION r1
+              JOIN RESERVATION r2
+                ON r2.id_bien = r1.id_bien
+               AND r2.id_reservation > r1.id_reservation
+             WHERE r1.id_bien = v_id
+               AND r1.statut IN ('EN_ATTENTE', 'CONFIRMEE')
+               AND r2.statut IN ('EN_ATTENTE', 'CONFIRMEE')
+               AND r1.date_debut < r2.date_fin
+               AND r2.date_debut < r1.date_fin;
+
+            IF v_conflits > 0 THEN
+                RAISE_APPLICATION_ERROR(-20001, 'Bien non disponible sur ces dates');
+            END IF;
+            v_id := g_biens.NEXT(v_id);
+        END LOOP;
+    END AFTER STATEMENT;
+END trg_resa_sans_chevauchement;
+/
+
 -- 10. Calcul automatique de la note moyenne (Procédure + Trigger)
 -- Recalcule la note moyenne d'un bien à partir de tous ses avis. Pas de transaction
 -- autonome ni de COMMIT : la procédure s'exécute dans la transaction qui a modifié
