@@ -136,6 +136,10 @@ script_sql.sql
 
 code_sql_pl.sql
 
+roles_grants.sql
+
+migration_mdp.sql
+
 requirements.txt
 
 
@@ -143,13 +147,22 @@ requirements.txt
 
 ## Installation
 
-### 1 Install Oracle XE and configure the connection
+### 1 Install Oracle XE and create the schema user
 
-Create an Oracle user, then create a file named `.env` at the root of the project
+The security triggers exempt the schema owner by its name, `AIRBNB_V2`, so the schema user
+must have this name. As an administrator (for example `SYSTEM`), in the pluggable database:
+
+```sql
+CREATE USER AIRBNB_V2 IDENTIFIED BY "choose_a_password" QUOTA UNLIMITED ON USERS;
+GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE VIEW,
+      CREATE PROCEDURE, CREATE TRIGGER, CREATE ROLE TO AIRBNB_V2;
+```
+
+Then create a file named `.env` at the root of the project
 (it is git-ignored and never published):
 
 ```
-DB_USER=your_username
+DB_USER=AIRBNB_V2
 DB_PASSWORD=your_password
 DB_DSN=localhost:1521/XEPDB1
 FLASK_SECRET_KEY=any_long_random_string
@@ -158,13 +171,16 @@ FLASK_SECRET_KEY=any_long_random_string
 If `FLASK_SECRET_KEY` is missing, a random key is generated at start-up (sessions are
 then lost on restart). Set `FLASK_DEBUG=1` only for local development.
 
-### 2 Run SQL Scripts
+### 2 Run the SQL scripts, in this order
 
-Run in Oracle SQL Developer:
+Connected as `AIRBNB_V2` (SQL Developer or SQL*Plus):
 
-sql/script_sql.sql
+1. `sql/script_sql.sql`: tables, constraints and indexes
+2. `sql/code_sql_pl.sql`: views, functions, procedures, triggers and demo data
+3. `sql/roles_grants.sql`: roles and privileges, last because they refer to the views and procedures
 
-sql/code_sql_pl.sql
+A clean installation reports no Oracle error. `sql/migration_mdp.sql` is only needed for a
+database created before the move to Argon2id password hashes.
 
 
 ---
