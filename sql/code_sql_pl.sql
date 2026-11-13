@@ -226,28 +226,46 @@ END;
 
 -- confirmerReservation 
 CREATE OR REPLACE PROCEDURE confirmerReservation(p_id_reservation NUMBER) IS
-    v_total NUMBER;
-    v_id_bien NUMBER;
+    v_debut  RESERVATION.date_debut%TYPE;
+    v_fin    RESERVATION.date_fin%TYPE;
+    v_statut RESERVATION.statut%TYPE;
+    v_total  NUMBER;
     v_id_loc NUMBER;
 BEGIN
+    -- Lecture ET verrouillage de la réservation : deux confirmations simultanées
+    -- de la même réservation sont exécutées l'une après l'autre.
+    SELECT date_debut, date_fin, statut
+      INTO v_debut, v_fin, v_statut
+      FROM RESERVATION
+     WHERE id_reservation = p_id_reservation
+       FOR UPDATE;
+
+    -- Seule une demande en attente peut être confirmée (pas de double confirmation).
+    IF v_statut <> 'EN_ATTENTE' THEN
+        RAISE_APPLICATION_ERROR(-20020,
+            'Réservation non confirmable : statut actuel ' || v_statut);
+    END IF;
+
     v_total := calculerPrixTotal(p_id_reservation);
 
     UPDATE RESERVATION
-    SET statut = 'CONFIRMEE', montant_reservation = v_total
-    WHERE id_reservation = p_id_reservation;
+       SET statut = 'CONFIRMEE', montant_reservation = v_total
+     WHERE id_reservation = p_id_reservation;
 
-    SELECT id_bien INTO v_id_bien FROM RESERVATION WHERE id_reservation = p_id_reservation;
-
+    -- INSERT ... VALUES : seule forme d'INSERT qui accepte RETURNING INTO.
     INSERT INTO LOCATION(id_reservation, date_debut, date_fin, montant)
-    SELECT id_reservation, date_debut, date_fin, montant_reservation 
-    FROM RESERVATION 
-    WHERE id_reservation = p_id_reservation
+    VALUES (p_id_reservation, v_debut, v_fin, v_total)
     RETURNING id_location INTO v_id_loc;
 
     COMMIT;
     DBMS_OUTPUT.PUT_LINE('Reservation confirmée. Location créée id=' || v_id_loc);
 EXCEPTION
-    WHEN OTHERS THEN ROLLBACK; RAISE;
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20022, 'Réservation introuvable : ' || p_id_reservation);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
 END;
 /
 
@@ -402,6 +420,14 @@ END;
 
 
 -- 1. Securite BIEN : Seul le propriétaire peut toucher à son bien
+-- Indicateur interne : vrai uniquement pendant le recalcul automatique de la note
+-- moyenne (procédure majNoteMoyenne). Aucun utilisateur ne reçoit EXECUTE sur ce
+-- package : seul le code du schéma peut le lire ou le modifier.
+CREATE OR REPLACE PACKAGE pkg_note_moyenne AS
+    g_en_cours BOOLEAN := FALSE;
+END pkg_note_moyenne;
+/
+
 CREATE OR REPLACE TRIGGER trg_secu_bien_owner
 BEFORE UPDATE OR DELETE ON BIEN
 FOR EACH ROW
@@ -409,6 +435,7 @@ DECLARE
     v_user_id NUMBER;
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF; -- Bypass Admin
+    IF pkg_note_moyenne.g_en_cours THEN RETURN; END IF; -- recalcul automatique de la note
 
     SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
     
@@ -557,37 +584,71 @@ END;
 /
 
 -- 10. Calcul automatique de la note moyenne (Procédure + Trigger)
-CREATE OR REPLACE PROCEDURE majNoteMoyenne(p_id_location NUMBER) IS
-    PRAGMA AUTONOMOUS_TRANSACTION;
-    v_id_bien NUMBER;
-    v_avg NUMBER;
+-- Recalcule la note moyenne d'un bien à partir de tous ses avis. Pas de transaction
+-- autonome ni de COMMIT : la procédure s'exécute dans la transaction qui a modifié
+-- AVIS_BIEN et voit donc l'avis qui vient d'être inséré, modifié ou supprimé.
+CREATE OR REPLACE PROCEDURE majNoteMoyenne(p_id_bien NUMBER) IS
+    v_id NUMBER;
 BEGIN
-    -- Trouver le bien
-    SELECT r.id_bien INTO v_id_bien
-    FROM RESERVATION r
-    JOIN LOCATION l ON r.id_reservation = l.id_reservation
-    WHERE l.id_location = p_id_location;
+    -- Verrou sur le bien : deux transactions qui notent le même bien sont
+    -- sérialisées, et la seconde recalcule après la validation de la première.
+    SELECT id_bien INTO v_id FROM BIEN WHERE id_bien = p_id_bien FOR UPDATE;
 
-    -- Recalculer la moyenne
-    SELECT NVL(AVG(a.note), 0) INTO v_avg
-    FROM AVIS_BIEN a
-    JOIN LOCATION l ON a.id_location = l.id_location
-    JOIN RESERVATION r ON l.id_reservation = r.id_reservation
-    WHERE r.id_bien = v_id_bien;
-
-    -- Mettre à jour le bien
-    UPDATE BIEN SET note_moyenne = ROUND(v_avg, 1) WHERE id_bien = v_id_bien;
-    COMMIT;
-EXCEPTION WHEN OTHERS THEN ROLLBACK; -- Sécurité
+    pkg_note_moyenne.g_en_cours := TRUE;   -- voir trg_secu_bien_owner
+    UPDATE BIEN
+       SET note_moyenne = (
+             SELECT NVL(ROUND(AVG(a.note), 1), 0)    -- 0 = aucun avis ("Nouveau")
+               FROM AVIS_BIEN a
+               JOIN LOCATION l    ON a.id_location = l.id_location
+               JOIN RESERVATION r ON l.id_reservation = r.id_reservation
+              WHERE r.id_bien = p_id_bien)
+     WHERE id_bien = p_id_bien;
+    pkg_note_moyenne.g_en_cours := FALSE;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        pkg_note_moyenne.g_en_cours := FALSE;   -- bien supprimé : rien à recalculer
+    WHEN OTHERS THEN
+        pkg_note_moyenne.g_en_cours := FALSE;
+        RAISE;
 END;
 /
 
+-- Trigger composé : collecte les biens concernés ligne par ligne, puis recalcule
+-- leur note une seule fois, après l'instruction (AVIS_BIEN n'est alors plus en
+-- cours de modification et peut être lu). Couvre INSERT, UPDATE et DELETE.
 CREATE OR REPLACE TRIGGER trg_maj_note_bien
-AFTER INSERT OR UPDATE ON AVIS_BIEN
-FOR EACH ROW
-BEGIN
-    majNoteMoyenne(:NEW.id_location);
-END;
+FOR INSERT OR UPDATE OR DELETE ON AVIS_BIEN
+COMPOUND TRIGGER
+    TYPE t_biens IS TABLE OF BOOLEAN INDEX BY PLS_INTEGER;
+    g_biens t_biens;
+
+    PROCEDURE retenir_bien(p_id_location NUMBER) IS
+        v_id_bien NUMBER;
+    BEGIN
+        SELECT r.id_bien INTO v_id_bien
+          FROM LOCATION l
+          JOIN RESERVATION r ON l.id_reservation = r.id_reservation
+         WHERE l.id_location = p_id_location;
+        g_biens(v_id_bien) := TRUE;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN NULL;
+    END retenir_bien;
+
+    AFTER EACH ROW IS
+    BEGIN
+        IF INSERTING OR UPDATING THEN retenir_bien(:NEW.id_location); END IF;
+        IF DELETING  OR UPDATING THEN retenir_bien(:OLD.id_location); END IF;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_id PLS_INTEGER := g_biens.FIRST;
+    BEGIN
+        WHILE v_id IS NOT NULL LOOP
+            majNoteMoyenne(v_id);
+            v_id := g_biens.NEXT(v_id);
+        END LOOP;
+    END AFTER STATEMENT;
+END trg_maj_note_bien;
 /
 
 -- TEST 
