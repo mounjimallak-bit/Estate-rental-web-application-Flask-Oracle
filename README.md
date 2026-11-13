@@ -240,6 +240,9 @@ http://localhost:5000
 - Owners can manage only their own listings
 - Tenants can review a property once per confirmed rental
 
+## License
+
+The code is released under the MIT License (see `LICENSE`).
 ## Author
 
 Malak Mounji
