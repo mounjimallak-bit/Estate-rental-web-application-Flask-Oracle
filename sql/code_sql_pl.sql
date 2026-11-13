@@ -219,8 +219,10 @@ BEGIN
     v_total := (v_fin - v_deb) * v_prix;
     RETURN v_total;
 EXCEPTION
-    WHEN NO_DATA_FOUND THEN RETURN 0;
-    WHEN OTHERS THEN RETURN 0;
+    -- Une réservation inexistante est une erreur, pas un prix nul ; toute autre
+    -- erreur Oracle remonte telle quelle.
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20022, 'Réservation introuvable : ' || p_id_reservation);
 END;
 /
 
@@ -229,16 +231,32 @@ CREATE OR REPLACE PROCEDURE confirmerReservation(p_id_reservation NUMBER) IS
     v_debut  RESERVATION.date_debut%TYPE;
     v_fin    RESERVATION.date_fin%TYPE;
     v_statut RESERVATION.statut%TYPE;
-    v_total  NUMBER;
+       v_total  NUMBER;
     v_id_loc NUMBER;
+    v_proprio BIEN.id_proprietaire%TYPE;
+    v_user_id NUMBER;
 BEGIN
     -- Lecture ET verrouillage de la réservation : deux confirmations simultanées
     -- de la même réservation sont exécutées l'une après l'autre.
-    SELECT date_debut, date_fin, statut
-      INTO v_debut, v_fin, v_statut
-      FROM RESERVATION
-     WHERE id_reservation = p_id_reservation
-       FOR UPDATE;
+    SELECT r.date_debut, r.date_fin, r.statut, b.id_proprietaire
+      INTO v_debut, v_fin, v_statut, v_proprio
+      FROM RESERVATION r
+      JOIN BIEN b ON b.id_bien = r.id_bien
+     WHERE r.id_reservation = p_id_reservation
+       FOR UPDATE OF r.statut;
+
+    -- ROLE_PROPRIETAIRE peut appeler cette procédure en SQL direct : seul le
+    -- propriétaire du bien réservé peut confirmer (même convention que les triggers).
+    IF USER NOT IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN
+        BEGIN
+            SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
+        EXCEPTION WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20090, 'Utilisateur non identifié.');
+        END;
+        IF v_proprio <> v_user_id THEN
+            RAISE_APPLICATION_ERROR(-20094, 'SÉCURITÉ : Ce bien ne vous appartient pas.');
+        END IF;
+    END IF;
 
     -- Seule une demande en attente peut être confirmée (pas de double confirmation).
     IF v_statut <> 'EN_ATTENTE' THEN
@@ -512,7 +530,7 @@ END pkg_note_moyenne;
 /
 
 CREATE OR REPLACE TRIGGER trg_secu_bien_owner
-BEFORE UPDATE OR DELETE ON BIEN
+BEFORE INSERT OR UPDATE OR DELETE ON BIEN
 FOR EACH ROW
 DECLARE
     v_user_id NUMBER;
@@ -521,9 +539,26 @@ BEGIN
     IF pkg_note_moyenne.g_en_cours THEN RETURN; END IF; -- recalcul automatique de la note
 
     SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
-    
+
+    IF INSERTING THEN
+        -- Un bien créé en SQL direct appartient toujours à son créateur, et sa note
+        -- part de 0 : seule majNoteMoyenne la calcule.
+        :NEW.id_proprietaire := v_user_id;
+        :NEW.note_moyenne    := 0;
+        RETURN;
+    END IF;
+
     IF :OLD.id_proprietaire != v_user_id THEN
         RAISE_APPLICATION_ERROR(-20091, 'SÉCURITÉ : Ce bien ne vous appartient pas.');
+    END IF;
+
+    IF UPDATING THEN
+        IF :NEW.id_proprietaire != :OLD.id_proprietaire THEN
+            RAISE_APPLICATION_ERROR(-20097, 'SÉCURITÉ : Un bien ne peut pas être transféré.');
+        END IF;
+        IF NVL(:NEW.note_moyenne, -1) != NVL(:OLD.note_moyenne, -1) THEN
+            RAISE_APPLICATION_ERROR(-20096, 'La note moyenne est calculée automatiquement.');
+        END IF;
     END IF;
 EXCEPTION WHEN NO_DATA_FOUND THEN
     RAISE_APPLICATION_ERROR(-20090, 'Utilisateur non identifié.');
