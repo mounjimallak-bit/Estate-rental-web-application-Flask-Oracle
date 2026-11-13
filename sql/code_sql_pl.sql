@@ -25,7 +25,7 @@ FROM UTILISATEUR;
 CREATE OR REPLACE VIEW VUE_MON_PROFIL AS
 SELECT id_utilisateur, login_db, nom, prenom, email, telephone, role_app, date_inscription
 FROM UTILISATEUR
-WHERE login_db = USER; 
+WHERE UPPER(login_db) = USER; 
 
 -- VUE : mes annonces
 CREATE OR REPLACE VIEW VUE_MES_ANNONCES AS
@@ -34,7 +34,7 @@ FROM ANNONCE a
 JOIN BIEN b ON a.id_bien = b.id_bien
 JOIN PROPRIETAIRE p ON b.id_proprietaire = p.id_utilisateur
 JOIN UTILISATEUR u ON p.id_utilisateur = u.id_utilisateur
-WHERE u.login_db = USER;
+WHERE UPPER(u.login_db) = USER;
 
 -- VUE : reservations reçues
 CREATE OR REPLACE VIEW VUE_RESERVATIONS_POUR_MOI AS
@@ -44,7 +44,7 @@ FROM RESERVATION r
 JOIN BIEN b ON r.id_bien = b.id_bien
 JOIN PROPRIETAIRE p ON b.id_proprietaire = p.id_utilisateur
 JOIN UTILISATEUR u ON r.id_locataire = u.id_utilisateur
-WHERE p.id_utilisateur = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = USER);
+WHERE p.id_utilisateur = (SELECT id_utilisateur FROM UTILISATEUR WHERE UPPER(login_db) = USER);
 
 -- VUE : mes reservations
 CREATE OR REPLACE VIEW VUE_MES_RESERVATIONS AS
@@ -52,7 +52,7 @@ SELECT r.*, b.titre AS nom_bien,
        (SELECT url_photo FROM PHOTO_BIEN WHERE id_bien = b.id_bien AND est_principale = 1 AND ROWNUM = 1) AS photo
 FROM RESERVATION r
 JOIN BIEN b ON r.id_bien = b.id_bien
-WHERE r.id_locataire = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = USER);
+WHERE r.id_locataire = (SELECT id_utilisateur FROM UTILISATEUR WHERE UPPER(login_db) = USER);
 
 
 -- VUE : mes paiements
@@ -61,7 +61,7 @@ SELECT p.*
 FROM PAIEMENT p
 JOIN LOCATION l ON p.id_location = l.id_location
 JOIN RESERVATION r ON l.id_reservation = r.id_reservation
-WHERE r.id_locataire = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = USER);
+WHERE r.id_locataire = (SELECT id_utilisateur FROM UTILISATEUR WHERE UPPER(login_db) = USER);
 
 
 -- VUE : revenue pour proprietaire
@@ -72,14 +72,14 @@ FROM PAIEMENT p
 JOIN LOCATION l ON p.id_location = l.id_location
 JOIN RESERVATION r ON l.id_reservation = r.id_reservation
 JOIN BIEN b ON r.id_bien = b.id_bien
-WHERE b.id_proprietaire = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = USER);
+WHERE b.id_proprietaire = (SELECT id_utilisateur FROM UTILISATEUR WHERE UPPER(login_db) = USER);
 
 
 -- VUE : Mes Biens (Inventaire du propriétaire)
 CREATE OR REPLACE VIEW VUE_MES_BIENS AS
 SELECT id_bien, titre, description, ville, surface, prix, capacite, note_moyenne
 FROM BIEN
-WHERE id_proprietaire = (SELECT id_utilisateur FROM UTILISATEUR WHERE login_db = USER);
+WHERE id_proprietaire = (SELECT id_utilisateur FROM UTILISATEUR WHERE UPPER(login_db) = USER);
 
 
 
@@ -271,11 +271,45 @@ END;
 
 -- annulerReservation 
 CREATE OR REPLACE PROCEDURE annulerReservation(p_id_reservation NUMBER) IS
+    v_statut   RESERVATION.statut%TYPE;
+    v_id_loc   LOCATION.id_location%TYPE;
+    v_bloquant NUMBER;
 BEGIN
+    SELECT statut INTO v_statut
+      FROM RESERVATION
+     WHERE id_reservation = p_id_reservation
+       FOR UPDATE;
+
+    IF v_statut = 'CONFIRMEE' THEN
+        -- Une réservation confirmée a une LOCATION. On ne l'annule que si rien n'en
+        -- dépend (aucun paiement, même en attente, aucun avis), et la location est
+        -- alors supprimée : une réservation annulée ne garde jamais de location.
+        SELECT id_location INTO v_id_loc
+          FROM LOCATION
+         WHERE id_reservation = p_id_reservation;
+        SELECT (SELECT COUNT(*) FROM PAIEMENT  WHERE id_location = v_id_loc)
+             + (SELECT COUNT(*) FROM AVIS_BIEN WHERE id_location = v_id_loc)
+          INTO v_bloquant
+          FROM DUAL;
+        IF v_bloquant > 0 THEN
+            RAISE_APPLICATION_ERROR(-20023,
+                'Réservation confirmée avec paiement ou avis : annulation impossible');
+        END IF;
+        DELETE FROM LOCATION WHERE id_location = v_id_loc;
+    ELSIF v_statut <> 'EN_ATTENTE' THEN
+        RAISE_APPLICATION_ERROR(-20020,
+            'Réservation non annulable : statut actuel ' || v_statut);
+    END IF;
+
     UPDATE RESERVATION SET statut = 'ANNULEE' WHERE id_reservation = p_id_reservation;
     COMMIT;
 EXCEPTION
-    WHEN OTHERS THEN ROLLBACK; RAISE;
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20022, 'Réservation introuvable : ' || p_id_reservation);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
 END;
 /
 
@@ -283,11 +317,20 @@ END;
 CREATE OR REPLACE PROCEDURE genererPaiement(p_id_location NUMBER, p_methode VARCHAR2) IS
     v_id NUMBER;
     v_montant NUMBER;
+    v_deja NUMBER;
 BEGIN
-    SELECT montant INTO v_montant FROM LOCATION WHERE id_location = p_id_location;
+    -- Verrou sur la location : deux paiements simultanés de la même location
+    -- sont traités l'un après l'autre.
+    SELECT montant INTO v_montant FROM LOCATION WHERE id_location = p_id_location FOR UPDATE;
     
     IF v_montant IS NULL THEN
         RAISE_APPLICATION_ERROR(-20002, 'Montant absent pour cette location');
+    END IF;
+
+    SELECT COUNT(*) INTO v_deja FROM PAIEMENT
+     WHERE id_location = p_id_location AND statut_paiement = 'REUSSI';
+    IF v_deja > 0 THEN
+        RAISE_APPLICATION_ERROR(-20026, 'Location déjà payée');
     END IF;
 
     INSERT INTO PAIEMENT(montant, date_paiement, id_location, statut_paiement, methode)
@@ -303,13 +346,39 @@ END;
 
 -- validerPaiement 
 CREATE OR REPLACE PROCEDURE validerPaiement(p_id_paiement NUMBER) IS
+    v_id_loc PAIEMENT.id_location%TYPE;
+    v_statut PAIEMENT.statut_paiement%TYPE;
+    v_verrou NUMBER;
+    v_deja   NUMBER;
 BEGIN
+    SELECT id_location, statut_paiement INTO v_id_loc, v_statut
+      FROM PAIEMENT
+     WHERE id_paiement = p_id_paiement
+       FOR UPDATE;
+    -- Même verrou que genererPaiement : une location ne peut pas être payée deux fois.
+    SELECT id_location INTO v_verrou FROM LOCATION WHERE id_location = v_id_loc FOR UPDATE;
+
+    IF v_statut <> 'EN_ATTENTE' THEN
+        RAISE_APPLICATION_ERROR(-20027,
+            'Paiement non validable : statut actuel ' || v_statut);
+    END IF;
+    SELECT COUNT(*) INTO v_deja FROM PAIEMENT
+     WHERE id_location = v_id_loc AND statut_paiement = 'REUSSI';
+    IF v_deja > 0 THEN
+        RAISE_APPLICATION_ERROR(-20026, 'Location déjà payée');
+    END IF;
+
     UPDATE PAIEMENT 
     SET statut_paiement = 'REUSSI', date_paiement = SYSDATE 
     WHERE id_paiement = p_id_paiement;
     COMMIT;
 EXCEPTION
-    WHEN OTHERS THEN ROLLBACK; RAISE;
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20022, 'Paiement introuvable : ' || p_id_paiement);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
 END;
 /
 
@@ -327,22 +396,36 @@ END;
 CREATE OR REPLACE PROCEDURE emettreRemboursement(p_id_paiement NUMBER) IS
     v_id_loc NUMBER;
     v_mont NUMBER;
+    v_statut PAIEMENT.statut_paiement%TYPE;
     v_new NUMBER;
 BEGIN
-    SELECT id_location, montant INTO v_id_loc, v_mont 
+    SELECT id_location, montant, statut_paiement INTO v_id_loc, v_mont, v_statut
     FROM PAIEMENT 
-    WHERE id_paiement = p_id_paiement;
+    WHERE id_paiement = p_id_paiement
+    FOR UPDATE;
+
+    -- Seul un paiement réussi se rembourse, et une seule fois.
+    IF v_statut <> 'REUSSI' THEN
+        RAISE_APPLICATION_ERROR(-20025,
+            'Seul un paiement réussi peut être remboursé (statut actuel ' || v_statut || ')');
+    END IF;
 
     INSERT INTO PAIEMENT(montant, date_paiement, id_location, statut_paiement, methode)
     VALUES(-v_mont, SYSDATE, v_id_loc, 'REMBOURSE', 'REMBOURSEMENT') 
     RETURNING id_paiement INTO v_new;
 
+    -- Transition REUSSI -> REMBOURSE : la seule que trg_no_update_paiement_if_reussi autorise.
     UPDATE PAIEMENT SET statut_paiement = 'REMBOURSE' WHERE id_paiement = p_id_paiement;
 
     COMMIT;
     DBMS_OUTPUT.PUT_LINE('Remboursement créé id=' || v_new);
 EXCEPTION
-    WHEN OTHERS THEN ROLLBACK; RAISE;
+    WHEN NO_DATA_FOUND THEN
+        ROLLBACK;
+        RAISE_APPLICATION_ERROR(-20022, 'Paiement introuvable : ' || p_id_paiement);
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
 END;
 /
 
@@ -437,7 +520,7 @@ BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF; -- Bypass Admin
     IF pkg_note_moyenne.g_en_cours THEN RETURN; END IF; -- recalcul automatique de la note
 
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     
     IF :OLD.id_proprietaire != v_user_id THEN
         RAISE_APPLICATION_ERROR(-20091, 'SÉCURITÉ : Ce bien ne vous appartient pas.');
@@ -458,7 +541,7 @@ DECLARE
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
 
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     IF DELETING THEN v_target_bien_id := :OLD.id_bien; ELSE v_target_bien_id := :NEW.id_bien; END IF;
     
     SELECT id_proprietaire INTO v_proprio_bien FROM BIEN WHERE id_bien = v_target_bien_id;
@@ -480,7 +563,7 @@ DECLARE
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
 
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     IF DELETING THEN v_target_bien_id := :OLD.id_bien; ELSE v_target_bien_id := :NEW.id_bien; END IF;
 
     SELECT id_proprietaire INTO v_proprio_bien FROM BIEN WHERE id_bien = v_target_bien_id;
@@ -502,7 +585,7 @@ DECLARE
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
 
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     IF DELETING THEN v_target_bien_id := :OLD.id_bien; ELSE v_target_bien_id := :NEW.id_bien; END IF;
 
     SELECT id_proprietaire INTO v_proprio_bien FROM BIEN WHERE id_bien = v_target_bien_id;
@@ -521,12 +604,73 @@ DECLARE
     v_user_id NUMBER;
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     
     -- Force l'ID à être celui de l'utilisateur connecté
     IF :NEW.id_locataire != v_user_id THEN
          :NEW.id_locataire := v_user_id; -- Correction automatique silencieuse
     END IF;
+
+    -- Une réservation écrite directement par un utilisateur est toujours une
+    -- demande en attente : seul confirmerReservation peut la confirmer.
+    :NEW.statut := 'EN_ATTENTE';
+    :NEW.montant_reservation := NULL;
+    :NEW.date_demande := SYSDATE;
+END;
+/
+
+-- Sécurité AVIS_BIEN : un locataire ne peut noter que ses propres locations
+-- (ROLE_LOCATAIRE a le droit INSERT direct sur AVIS_BIEN).
+CREATE OR REPLACE TRIGGER trg_secu_avis_locataire
+BEFORE INSERT ON AVIS_BIEN
+FOR EACH ROW
+DECLARE
+    v_user_id NUMBER;
+    v_n       NUMBER;
+BEGIN
+    IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
+
+    SELECT COUNT(*) INTO v_n
+      FROM LOCATION l
+      JOIN RESERVATION r ON r.id_reservation = l.id_reservation
+     WHERE l.id_location = :NEW.id_location
+       AND r.id_locataire = v_user_id;
+    IF v_n = 0 THEN
+        RAISE_APPLICATION_ERROR(-20093, 'SÉCURITÉ : Cette location ne vous appartient pas.');
+    END IF;
+EXCEPTION WHEN NO_DATA_FOUND THEN
+    RAISE_APPLICATION_ERROR(-20090, 'Utilisateur non identifié.');
+END;
+/
+
+-- Sécurité PAIEMENT : un locataire ne peut créer qu'un paiement EN_ATTENTE, du montant
+-- de sa propre location (ROLE_LOCATAIRE a le droit INSERT direct sur PAIEMENT).
+CREATE OR REPLACE TRIGGER trg_secu_paiement_locataire
+BEFORE INSERT ON PAIEMENT
+FOR EACH ROW
+DECLARE
+    v_user_id NUMBER;
+    v_montant NUMBER;
+BEGIN
+    IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
+
+    BEGIN
+        SELECT l.montant INTO v_montant
+          FROM LOCATION l
+          JOIN RESERVATION r ON r.id_reservation = l.id_reservation
+         WHERE l.id_location = :NEW.id_location
+           AND r.id_locataire = v_user_id;
+    EXCEPTION WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20093, 'SÉCURITÉ : Cette location ne vous appartient pas.');
+    END;
+
+    :NEW.statut_paiement := 'EN_ATTENTE';
+    :NEW.montant         := v_montant;
+    :NEW.date_paiement   := SYSDATE;
+EXCEPTION WHEN NO_DATA_FOUND THEN
+    RAISE_APPLICATION_ERROR(-20090, 'Utilisateur non identifié.');
 END;
 /
 
@@ -538,7 +682,7 @@ DECLARE
     v_user_id NUMBER;
 BEGIN
     IF USER IN ('AIRBNB_V2', 'SYSTEM', 'SYS') THEN RETURN; END IF;
-    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE login_db = USER;
+    SELECT id_utilisateur INTO v_user_id FROM UTILISATEUR WHERE UPPER(login_db) = USER;
     
     -- Force l'expéditeur à être l'utilisateur connecté
     :NEW.id_expediteur := v_user_id;
@@ -567,7 +711,15 @@ BEFORE UPDATE ON PAIEMENT
 FOR EACH ROW
 BEGIN
     IF :OLD.statut_paiement = 'REUSSI' THEN
-        RAISE_APPLICATION_ERROR(-20011, 'Fraude détectée : Paiement déjà validé, modification interdite.');
+        -- Un paiement réussi est figé. Seule exception : le remboursement
+        -- (emettreRemboursement), qui passe le statut à REMBOURSE sans rien changer d'autre.
+        IF NOT (    :NEW.statut_paiement = 'REMBOURSE'
+                AND :NEW.montant = :OLD.montant
+                AND :NEW.id_location = :OLD.id_location
+                AND NVL(:NEW.date_paiement, DATE '1900-01-01') = NVL(:OLD.date_paiement, DATE '1900-01-01')
+                AND NVL(:NEW.methode, '#') = NVL(:OLD.methode, '#')) THEN
+            RAISE_APPLICATION_ERROR(-20011, 'Fraude détectée : Paiement déjà validé, modification interdite.');
+        END IF;
     END IF;
 END;
 /

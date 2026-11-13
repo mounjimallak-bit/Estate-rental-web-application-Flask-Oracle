@@ -140,6 +140,8 @@ roles_grants.sql
 
 migration_mdp.sql
 
+tests_regles_metier.sql
+
 requirements.txt
 
 
@@ -215,13 +217,26 @@ http://localhost:5000
 - Session authentication
 - Owner-only property management
 - Tenant-only reservations
+- Every reservation action (accept, reject, pay, review) checks that the reservation belongs to the logged-in user
+
+---
+
+## Tests
+
+- Flask logic, with a simulated database: `python -m pytest -q tests`
+- Business rules enforced by Oracle: on a fresh **test** installation, connected as `AIRBNB_V2`,
+  run `sql/tests_regles_metier.sql`. It prints PASS or FAIL for each rule (confirmation,
+  overlapping bookings, ratings, cancellation, payment and refund). It creates and commits
+  data: never run it on real data.
 
 ---
 
 ## Business Rules 
 - Role-based access: Tenant vs Owner
 - Reservation workflow with statuses (request → accept/reject → payment)
-- No overlapping reservations for the same property (availability check)
+- No overlapping active reservations (pending or confirmed) for the same property, enforced by a trigger whatever the write path
+- A confirmed reservation can be cancelled only before any payment or review; its rental is then removed
+- A rental is paid once; a successful payment can only be refunded, once
 - Owners can manage only their own listings
 - Tenants can review a property once per confirmed rental
 

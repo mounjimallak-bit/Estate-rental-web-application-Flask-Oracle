@@ -97,7 +97,8 @@ CREATE TABLE LOCATION (
     date_debut DATE NOT NULL,
     date_fin DATE NOT NULL,
     montant NUMBER(12,2),
-    CONSTRAINT fk_loc_reservation FOREIGN KEY (id_reservation) REFERENCES RESERVATION(id_reservation)
+    CONSTRAINT fk_loc_reservation FOREIGN KEY (id_reservation) REFERENCES RESERVATION(id_reservation),
+    CONSTRAINT uq_location_reservation UNIQUE (id_reservation)   -- une seule location par réservation
 );
 
 CREATE TABLE PAIEMENT (
@@ -148,6 +149,9 @@ CREATE INDEX idx_bien_proprietaire ON BIEN(id_proprietaire);
 CREATE INDEX idx_annonce_bien ON ANNONCE(id_bien);
 CREATE INDEX idx_reservation_bien ON RESERVATION(id_bien);
 CREATE INDEX idx_reservation_locataire ON RESERVATION(id_locataire);
-CREATE INDEX idx_location_reservation ON LOCATION(id_reservation);
+-- LOCATION(id_reservation) est indexé par la contrainte uq_location_reservation.
 CREATE INDEX idx_paiement_location ON PAIEMENT(id_location);
 CREATE INDEX idx_message_dest ON MESSAGE(id_destinataire);
+-- Les triggers comparent UPPER(login_db) au nom du compte Oracle (USER, toujours en
+-- majuscules) : deux identifiants ne peuvent donc pas différer seulement par la casse.
+CREATE UNIQUE INDEX uq_utilisateur_login_upper ON UTILISATEUR(UPPER(login_db));

@@ -64,6 +64,24 @@ def role_required(*roles):
     return True
 
 
+def reservation_appartient(cur, id_reservation, id_utilisateur, role):
+    """Vrai si la réservation concerne l'utilisateur connecté : il en est le locataire,
+    ou le propriétaire du bien réservé. L'identifiant vient du formulaire : sans ce
+    contrôle, il suffirait de le changer pour agir sur la réservation d'un autre."""
+    if role == "Locataire":
+        cur.execute(
+            "SELECT 1 FROM RESERVATION WHERE id_reservation = :1 AND id_locataire = :2",
+            [id_reservation, id_utilisateur],
+        )
+    else:
+        cur.execute(
+            "SELECT 1 FROM RESERVATION r JOIN BIEN b ON b.id_bien = r.id_bien "
+            "WHERE r.id_reservation = :1 AND b.id_proprietaire = :2",
+            [id_reservation, id_utilisateur],
+        )
+    return cur.fetchone() is not None
+
+
 @app.context_processor
 def inject_user():
     return {"me": current_user()}
@@ -327,7 +345,10 @@ def tenant_pay():
 
     conn, cur = get_db()
     try:
-    
+        if not reservation_appartient(cur, id_res, session["user_id"], "Locataire"):
+            flash("Réservation introuvable.", "error")
+            return redirect(url_for("tenant_dashboard"))
+
         cur.execute("SELECT id_location FROM LOCATION WHERE id_reservation = :1", [id_res])
         row = cur.fetchone()
         if not row:
@@ -365,6 +386,10 @@ def tenant_review():
 
     conn, cur = get_db()
     try:
+        if not reservation_appartient(cur, id_res, session["user_id"], "Locataire"):
+            flash("Réservation introuvable.", "error")
+            return redirect(url_for("tenant_dashboard"))
+
         cur.execute("SELECT id_location FROM LOCATION WHERE id_reservation = :1", [id_res])
         row = cur.fetchone()
         if not row:
@@ -453,7 +478,10 @@ def owner_accept():
 
     conn, cur = get_db()
     try:
-       
+        if not reservation_appartient(cur, id_res, session["user_id"], "Proprietaire"):
+            flash("Réservation introuvable.", "error")
+            return redirect(url_for("owner_dashboard"))
+
         cur.callproc("confirmerReservation", [id_res])
         conn.commit()
         flash("Réservation acceptée (CONFIRMEE + LOCATION créée).", "success")
@@ -476,6 +504,10 @@ def owner_reject():
 
     conn, cur = get_db()
     try:
+        if not reservation_appartient(cur, id_res, session["user_id"], "Proprietaire"):
+            flash("Réservation introuvable.", "error")
+            return redirect(url_for("owner_dashboard"))
+
         cur.callproc("annulerReservation", [id_res])
         conn.commit()
         flash("Réservation refusée/annulée.", "success")
