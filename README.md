@@ -100,7 +100,7 @@ The database includes:
 
 Oracle PL/SQL is used for:
 
-- Authentication
+- Registration (stores the Argon2id hash computed by Flask; passwords are verified in Flask)
 - Reservation creation
 - Payment processing
 - Business rules enforcement
